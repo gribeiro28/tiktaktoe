@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <style>
+        #app {
+            text-align: center;
+        }
+
+        img {
+            width: 30%;
+            margin: auto;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .files {
+            margin-top: 5%
+        }
+    </style>
+
+    <%- include('../partials/head'); %>
+</head>
+
+<body class="container">
+
+    <div id="app">
+
+        <%- include('../partials/navBar'); %>
+
+            <el-upload name="file" class="upload-demo files" action="/upload" :on-preview="handlePreview"
+                :on-remove="handleRemove" :before-remove="beforeRemove" multiple :limit="3000" :on-exceed="handleExceed"
+                :file-list="fileList">
+                <el-button size="small" @click="adicionar" type="primary">Click to upload</el-button>
+            </el-upload>
+
+    </div>
+
+</body>
+
+<%- include('../partials/footer'); %>
+    <script src="//unpkg.com/vue/dist/vue.js"></script>
+    <script src="//unpkg.com/element-ui@2.15.3/lib/index.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            methods: {
+                handleRemove(file, fileList) {
+                    if ('<%= funcao%>' == "financeiro" || '<%= funcao%>' == "diretor") {
+                        fetch('/delete/' + file.url)
+                            .then(function (response) {
+                                return response.blob();
+                            })
+                            .then(function (myBlob) {
+                                console.log();
+                            });
+                    } else {
+                        alert("Você não tem permissão para deletar arquivos", "Falha de permissão");
+                        this.$confirm(`Deseja Deletar ${file.name} ?`, 'Deletar Aquivo',
+                            { confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar' });
+
+                        window.location.reload();
+                    }
+                },
+                handlePreview(file) {
+                    console.log(file)
+                    console.log(file.url);
+                    window.open('/download/' + file.url);
+                },
+                handleExceed(files, fileList) {
+                    this.$message.warning(
+                        `The limit is 3, you selected ${files.length
+                        } files this time, add up to ${files.length + fileList.length
+                        } totally`,
+                    )
+                },
+                beforeRemove(file, fileList) {
+                    console.log('<%= funcao %>');
+                    return this.$confirm(`Deseja Deletar ${file.name} ?`, 'Deletar Aquivo',
+                        { confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar' })
+                },
+                adicionar() {
+                    if ('<%= funcao%>' == "financeiro" || '<%= funcao%>' == "diretor") {
+                        fetch('/delete/' + file.url)
+                            .then(function (response) {
+                                return response.blob();
+                            })
+                            .then(function (myBlob) {
+                                console.log();
+                            });
+                    } else {
+                        alert("Você não tem permissão para Adicionar arquivos", "Falha de permissão");
+                        window.location.reload();
+                    }
+                }
+            },
+            data: {
+                image: '',
+                value: '',
+                nome: '',
+                fileList: [<% files.forEach(function (file) {%>
+                    { name: '<%=file.name %>', url: '<%=file.url %>' },
+                    <% });%>],
+        },
+        })
+    </script>
+
+</html>

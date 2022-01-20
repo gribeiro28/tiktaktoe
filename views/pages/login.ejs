@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <style>
+        #app {
+            text-align: left;
+        }
+
+        img {
+            width: 30%;
+            margin: auto;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .files {
+            margin-top: 5%
+        }
+
+        .select {
+            width: 100%;
+        }
+
+        form {
+            margin-top: 0%
+        }
+    </style>
+
+    <%- include('../partials/head'); %>
+</head>
+
+<body class="container">
+
+    <div id="app">
+
+        <el-card class="box-card">
+            <div slot="header" class="clearfix">
+                <h2>Login</h2>
+            </div>
+
+            <el-form id="form" ref="form" :model="form" label-width="120px" method="POST" action="/usuario/">
+
+                <el-form-item label="Email">
+                    <el-input v-model="form.email"></el-input>
+                </el-form-item>
+
+                <el-form-item label="Senha" prop="pass">
+                    <el-input type="password" v-model="form.senha" name="senha" autocomplete="off">
+                    </el-input>
+                </el-form-item>
+
+
+                <el-form-item>
+                    <el-button type="primary" @click="onSubmit(form)">Login</el-button>
+                </el-form-item>
+            </el-form>
+
+        </el-card>
+
+
+    </div>
+
+</body>
+
+<%- include('../partials/footer'); %>
+    <script src="//unpkg.com/vue/dist/vue.js"></script>
+    <script src="//unpkg.com/element-ui@2.15.3/lib/index.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                form: {
+                    email: '',
+                    senha: '',
+                },
+
+            },
+            methods: {
+                enviar(nome, email, senha, funcao) {
+                    console.log(nome);
+
+                    //document.getElementById("form").submit();
+                },
+                onSubmit(form) {
+
+                    let url = "/logar/" + form.email + "/" + form.senha;
+
+                    console.log(url);
+
+                    fetch(url).then(
+                        function (resp) {
+                            resp.json().then(function (jsonQ) {
+
+                                if (jsonQ.json == "Enviado") {
+                                    window.location.href = window.location.origin + "/";
+                                }
+
+                            });
+                        });
+
+
+                }
+            }
+        })
+    </script>
+
+</html>
+

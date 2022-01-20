@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+</head>
+
+<body class="container">
+
+    <header>
+
+    </header>
+
+    <div style="border: solid white 1px;width: 50vw;margin: auto;height: 80vh;">
+
+
+        <div id="0" onclick="teste(id)" style="border: solid green 1px;width: 33%;height: 33%;float: left;">
+            <span id="s0" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="1" onclick="teste(id)" style="border: solid green 1px;width: 33%;height: 33%;float: left;">
+            <span id="s1" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="2" onclick="teste(id)" style="border: solid green 1px;width: 33%;height: 33%;float: left;">
+            <span id="s2" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+
+
+        <div id="3" onclick="teste(id)" style="border: solid red 1px;width: 33%;height: 33%;float: left;">
+            <span id="s3" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="4" onclick="teste(id)" style="border: solid red 1px;width: 33%;height: 33%;float: left;">
+            <span id="s4" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="5" onclick="teste(id)" style="border: solid red 1px;width: 33%;height: 33%;float: left;">
+            <span id="s5" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+
+
+        <div id="6" onclick="teste(id)" style="border: solid blue 1px;width: 33%;height: 33%;float: left;">
+            <span id="s6" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="7" onclick="teste(id)" style="border: solid blue 1px;width: 33%;height: 33%;float: left;">
+            <span id="s7" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+        <div id="8" onclick="teste(id)" style="border: solid blue 1px;width: 33%;height: 33%;float: left;">
+            <span id="s8" style="width:100%; margin-left:30%;margin-top: 100px; font-size: 120px;"></span>
+        </div>
+
+    </div>
+
+
+    <input type="button" value="RESET" onclick="reset()">
+
+
+    <script>
+
+        atual = true;
+
+        var total = "";
+
+        async function teste(id) {
+
+            if (document.getElementById("s" + id).textContent == "") {
+
+                if (atual == true) {
+                    total += id;
+                    document.getElementById("s" + id).textContent = "X";
+                }/* else {
+                    total += id;
+                    document.getElementById("s" + id).textContent = "O";
+                }*/
+                //atual = !atual;
+                //alert(id + document.getElementById(id).textContent);
+
+                url = "/envio/" + total;
+                verificaCampeao();
+                if (total != "") {
+                    await fetch(url).then(
+                        function (resp) {
+                            resp.json().then(function (jsonQ) {
+                                let lugar = jsonQ.resp;
+                                total += "" + lugar;
+                                document.getElementById("s" + lugar).textContent = "O";
+                                verificaCampeao();
+                            });
+                        });
+                }
+
+            }
+
+
+        }
+
+        function reset() {
+
+            for (let a = 0; a < 9; a++) {
+                document.getElementById("s" + a).textContent = "";
+            }
+
+            total = "";
+            atual = true;
+            window.location.reload();
+        }
+
+
+        async function verificaCampeao() {
+
+            let i = "";
+            let p = "";
+
+            let vet = "";
+
+            for (let a = 0; a < total.length; a++) {
+                if (a % 2 == 0) {
+                    i += total[a];
+                } else {
+                    p += total[a];
+                }
+            }
+
+            console.log("Impar: " + i);
+            console.log("Par: " + p);
+            console.log(total.length);
+
+            //Verifica se o X ganhou por linha
+            if (i.indexOf("0") >= 0 && i.indexOf("1") >= 0 && i.indexOf("2") >= 0) {
+                vet = "X";
+            }
+            if (i.indexOf("3") >= 0 && i.indexOf("4") >= 0 && i.indexOf("5") >= 0) {
+                vet = "X";
+            }
+            if (i.indexOf("6") >= 0 && i.indexOf("7") >= 0 && i.indexOf("8") >= 0) {
+                vet = "X";
+            }
+
+            //Verifica se o X ganhou por Coluna
+            if (i.indexOf("0") >= 0 && i.indexOf("3") >= 0 && i.indexOf("6") >= 0) {
+                vet = "X";
+            }
+            if (i.indexOf("1") >= 0 && i.indexOf("4") >= 0 && i.indexOf("7") >= 0) {
+                vet = "X";
+            }
+            if (i.indexOf("2") >= 0 && i.indexOf("5") >= 0 && i.indexOf("8") >= 0) {
+                vet = "X";
+            }
+
+            //Verifica se o X ganhou por diagonal
+            if (i.indexOf("0") >= 0 && i.indexOf("4") >= 0 && i.indexOf("8") >= 0) {
+                vet = "X";
+            } if (i.indexOf("2") >= 0 && i.indexOf("4") >= 0 && i.indexOf("6") >= 0) {
+                vet = "X";
+            }
+
+            /*
+            *================================================================
+            */
+
+            //Verifica se o O ganhou por linha
+            if (p.indexOf("0") >= 0 && p.indexOf("1") >= 0 && p.indexOf("2") >= 0) {
+                vet = "O";
+            }
+            if (p.indexOf("3") >= 0 && p.indexOf("4") >= 0 && p.indexOf("5") >= 0) {
+                vet = "O";
+            }
+            if (p.indexOf("6") >= 0 && p.indexOf("7") >= 0 && p.indexOf("8") >= 0) {
+                vet = "O";
+            }
+
+            //Verifica se o O ganhou por Coluna
+            if (p.indexOf("0") >= 0 && p.indexOf("3") >= 0 && p.indexOf("6") >= 0) {
+                vet = "O";
+            }
+            if (p.indexOf("1") >= 0 && p.indexOf("4") >= 0 && p.indexOf("7") >= 0) {
+                vet = "O";
+            }
+            if (p.indexOf("2") >= 0 && p.indexOf("5") >= 0 && p.indexOf("8") >= 0) {
+                vet = "O";
+            }
+
+            //Verifica se o O ganhou por diagonal
+            if (p.indexOf("0") >= 0 && p.indexOf("4") >= 0 && p.indexOf("8") >= 0) {
+                vet = "O";
+            } if (p.indexOf("2") >= 0 && p.indexOf("4") >= 0 && p.indexOf("6") >= 0) {
+                vet = "O";
+            }
+
+            if (vet != "") {
+
+                console.log("DEVEMOS ESTAR AQ");
+
+                url = "/fim/" + total + "/" + vet;
+                await fetch(url).then(
+                    function (resp) {
+                        resp.json().then(function (jsonQ) {
+
+                            alert("O " + vet + " ganhou"); reset()
+
+                        });
+                    });
+                return true;
+
+            } else if (total.length == 9) {
+                console.log("DEVEMOS Estar empatados");
+
+                url = "/fim/" + total + "/" + "E";
+                await fetch(url).then(
+                    function (resp) {
+                        resp.json().then(function (jsonQ) {
+
+                            alert("Empate"); reset()
+
+                        });
+                    });
+            }
+
+        }
+
+    </script>
+</body>
+
+</html>
