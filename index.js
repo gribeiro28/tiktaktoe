@@ -1,8 +1,13 @@
+const fs = require('fs');
 
 // Carega as bibliotecas utilziadas
 const { response } = require('express');
 var express = require('express');
 var session = require("express-session");
+const bodyParser = require('body-parser');
+const { range } = require('express/lib/request');
+
+const port = 4001;
 
 var ses;
 
@@ -15,583 +20,577 @@ app.use(session({
 
 }));
 
-//carrea os gerenciadores de aquivos
-var fs = require("fs");
-var multer = require("multer")
-var path = require("path");
 
-//configura criptografia
-const DADOS_CRIPTOGRAFAR = {
-    algoritmo: "aes256",
-    segredo: "chaves",
-    tipo: "hex"
-};
-
-//Inicia as configurações da biblioteca de criptografia
-const crypto = require("crypto");
-const cipher = crypto.createCipher(DADOS_CRIPTOGRAFAR.algoritmo, DADOS_CRIPTOGRAFAR.segredo);
-
-//Função que criptografa
-function criptografar(senha) {
-    const cipher = crypto.createCipher(DADOS_CRIPTOGRAFAR.algoritmo, DADOS_CRIPTOGRAFAR.segredo);
-    cipher.update(senha);
-    return cipher.final(DADOS_CRIPTOGRAFAR.tipo);
-};
-
-//inicia a biblioteca responsavel pelo envio de email
-var nodemailer = require('nodemailer');
-
-//Configura quem vai enviar o email
-var remetente = nodemailer.createTransport({
-    host: 'mail.klausfiscal.com.br',
-    port: 465,
-    auth: {
-        user: 'report@klausfiscal.com.br',
-        pass: 'KlausRep@2020'
-    }
-});
-
-//Conexão com o banco de dados
-var mysql = require('mysql2');
-const connection = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: 'root132',
-    database: 'informativo'
-});
-
-//função que salva os dados do multer na pasta de uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "uploads/")
-    },
-    filename: function (req, file, cb) {
-        cb(null, (file.originalname).split(".")[0] + path.extname(file.originalname));
-    }
-})
-
-//Configura o multer com a fnção acima
-const upload = multer({ storage });
+//configurando o body parser para interpretar requests mais tarde
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
 // Informa que usaremos a EJS engine
 app.set('view engine', 'ejs');
 
-
-// Tela de login
-app.get('/login', function (req, res) {
-    if (!req.session.viewCount) {
-        req.session.viewCount = 1;
-    } else {
-        req.session.viewCount += 1;
-    }
-
-    res.render('pages/login', { viewCount: req.session.viewCount });
-
-});
-
-
-//Função que realiza o Login e envia os dados da sessão
-app.get('/logar/:email/:senha', function (req, res) {
-
-    let email = req.params.email;
-    let senha = req.params.senha;
-
-    senha = criptografar(senha)
-
-    let sql = "SELECT * FROM acesso WHERE email = '" + email + "' AND senha='" + senha + "';";
-
-    console.log(sql);
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
-
-        if (results.length == 0) {
-            res.render('pages/login', { viewCount: req.session.viewCount });
-        } else {
-
-            ses = req.session;
-
-            console.log(results.length);
-
-            req.session.email = results[0].email;
-            req.session.nome = results[0].nome;
-            req.session.funcao = results[0].funcao;
-
-            res.json({ json: "Enviado", nome: ses.nome })
-        }
-    });
-
-});
-
-//Funçãopara termino de sessão
-app.get('/sair', function (req, res) {
-
-    ses = undefined;
-
-    req.session = undefined;
-
-    res.redirect('/login');
-
-});
-
-
 // index page - Tela de cadastro de Usuário
 app.get('/', function (req, res) {
 
-    console.log(req.session.email);
+    res.render('./pages/jogo');
 
-    if (req.session.email == undefined) {
-
-        res.redirect("/login");
-
-    } else {
-
-        connection.query('SELECT * FROM informativo.area;', function (error, results, fields) {
-            if (error) throw error;
-
-            var areas = [];
-
-            for (let a = 0; a < results.length; a++) {
-                areas[a] = results[a].nome;
-            }
-
-            if (ses.funcao == 'financeiro' || ses.funcao == 'diretores') {
-                res.render('pages/cadastraUsuario', { areas: results, funcao: ses.funcao });
-            } else {
-                res.redirect("/teste");
-            }
-        });
-    }
 });
 
+app.get('/envio/:id', async function (req, res) {
+    //Le a pasta de arquivos
+    const json = await JSON.parse(fs.readFileSync('finais.json', 'utf-8'));
+    const finais = json.finais;
 
-// Tela de documentações
-app.get('/teste', function (req, res) {
+    id = req.params.id;
+    camp = await verificaCampeao(id, res);
 
-    if (req.session.email == undefined) {
-        res.redirect("/login");
-    } else {
+    if (camp != "fica") {
+        req.params.vitorioso = camp;
+        fim(req, res, finais);
+        return 0;
+    }
 
-        arquivos = fs.readdirSync(__dirname + '/uploads');
 
-        files = [];
+    //Inicio de vetor
+    let t = "{\"finais\":[";
 
-        for (let a = 0; a < arquivos.length; a++) {
-            files[a] = {
-                name: (arquivos[a].split("."))[0],
-                url: arquivos[a]
-            };
+    //variaveis com os valores mais viaveis e os mais inviaveis
+    var viavel = [];
+    var inviavel = [];
+
+    //Minimo de rating que queremos 
+    var minimoAceitavel = 50;
+
+    var i = "";
+    var p = "";
+
+    //Procura uma Vitoria imediata no jogo antes de jogar
+    var achou = procuraVitoria(id, finais, res);
+
+    //Caso tenha achado, ja ira ter feito na função, 'procuraVitoria', então só precisa finalizar a função
+    if (achou) {
+        console.log("Achou uma Vitoria");
+        return;
+    } else { //Caso não tenha achado 
+
+        //Procura uma derrota imediata para que possa impedir 
+        achou = procuraDerrota(id, finais, res);
+
+        //Caso tenha achado, ja ira ter impedido
+        if (achou) {
+            console.log("Achou uma Derrota");
+            return;
+        }
+    }
+
+    //Roda o vetor atual de jogadas ja registrada q temos
+    for (let b = 0; b < finais.length; b++) {
+        t += JSON.stringify(finais[b]);
+
+        /*Verifica se 
+        finais não esta vazio
+        existe uma opção ja registrada com uma proxima jogada para agora
+        se ela inicia com a sequencia q queremos
+        e se esta na margem aceitavel que queremos, seja maior ou menor
+        */
+        if (finais.length > 0 && finais[b].a.length == (id.length) + 1 && finais[b].a.indexOf(id) == 0 && finais[b].w < minimoAceitavel) {
+            //Caso menor que o aceitavel entra em inviavel
+            inviavel[inviavel.length] = finais[b];
+        } else if (finais.length > 0 && finais[b].a.length == (id.length) + 1 && finais[b].a.indexOf(id) == 0 && finais[b].w >= minimoAceitavel) {
+            //Caso maior que o aceitavel entra em viavel
+            viavel[viavel.length] = finais[b];
         }
 
-        connection.query('SELECT * FROM informativo.area;', function (error, results, fields) {
-            if (error) throw error;
+        //verifica se ja terminamos o vetor de finais
+        if (b == finais.length - 1) {
 
-            var areas = [];
+            verificaCampeao(id + "" + finais[b].a[finais[b].a.length - 1], res);
 
-            for (let a = 0; a < results.length; a++) {
-                areas[a] = results[a].nome;
+            if (viavel.length > 0) {//Verifica se existe opção VIÁVEL
+
+                //prepara uma variavel aux para verificar qual é a opção mais viavel
+                maisViavel = { w: 0 };
+
+                //roda todo o vetor de viaveis
+                for (let b = 0; b < viavel.length; b++) {
+
+                    //Caso seja mais viavel que a atual, inverte
+                    if (viavel[b].w > maisViavel.w) {
+                        maisViavel = viavel[b];
+                    }
+                }
+
+                console.log("Jogada mais viavel:")
+                console.log(maisViavel);
+
+                //Envia a com mais rating
+                res.json({ resp: maisViavel.a.substr(maisViavel.a.length - 1) });
+            } else if (inviavel.length > 0 && (9 - id.length - inviavel.length) > 0) { //Verifica se existe uma opção INVIÁVEL. Apos o && estou tentando verificar se todas estão consideraas como inviavel
+
+                //Aux para guardar as opções que n vale a pena
+                naoFazer = "";
+
+                //Roda o vetor de jogas inviaveis
+                for (let b = 0; b < inviavel.length; b++) {
+                    //Adiciona a jogada as que n se deve fazer
+                    naoFazer += inviavel[b].a.substr(inviavel[b].a.length - 1);
+                }
+
+
+                //Cria uma variavel para guardar o resultado aleatorio
+                let rand;
+                var vezes = 0;
+
+                //Laço para procurar uma jogada pra fazer enquanto ela for diferente de algo ja jogado ou algo q nã ovale a pena
+                do {
+                    vezes++
+                    //prepara o rand para retornar um numero de 0 a 8 (que são as opções do campo do jogo da velha)
+                    min = Math.ceil(0);
+                    max = Math.floor(9);
+                    rand = Math.floor(Math.random() * (max - min)) + min;
+                } while (id.indexOf(rand) != -1 || naoFazer.indexOf(rand) != -1)
+
+                console.log(rand);
+
+
+                //Adiciona a jogada Decidida agora ao vetor
+                t += ",{\"a\":" + JSON.stringify(id + rand) + ", \"w\":" + (minimoAceitavel + 10) + "}";
+
+                //Fecha o vetor
+                t += "]}";
+
+                //Cria o novo file
+                fs.writeFileSync("finais.json", "" + t);
+
+                console.log("Quando sabemos de jogadas inviaveis pra situação:");
+                console.log(t);
+
+                res.json({ resp: rand });
+                break;
+
+            } else { //Caso seja uma posição nova ou se todas as jogadas possiveis forem consideradas inviaveis
+                //Inicia o aux randomico
+                let rand;
+
+                //Laço para procurar uma jogada ainda não feita
+                do {
+                    //prepara o rand para retornar um numero de 0 a 8 (que são as opções do campo do jogo da velha)
+                    min = Math.ceil(0);
+                    max = Math.floor(9);
+                    rand = Math.floor(Math.random() * (max - min)) + min;
+                } while (id.indexOf(rand) != -1)
+
+
+                //Adiciona a jogada Decidida agora ao vetor
+                t += ",{\"a\":" + JSON.stringify(id + rand) + ", \"w\":" + 10 + "}";
+                7
+                //Fecha o vetor
+                t += "]}";
+
+                console.log("Quando não temos conhecimento sobre a posição atual.");
+                console.log(t);
+                //Cria o novo file
+                fs.writeFileSync("finais.json", "" + t);
+
+                res.json({ resp: rand });
+                break;
             }
-
-            res.render('pages/envioAtualizacao', { areas: results, files: files, funcao: ses.funcao });
-        });
-    }
-});
-
-// index page - Tela de cadastro de Usuário
-app.get('/tabela', function (req, res) {
-
-    var areas = [];
-    var clientes = [];
-
-    if (req.session.email == undefined) {
-
-        res.redirect("/login");
-    } else {
-
-        connection.query('SELECT * FROM cancelamento.cliente where teste = 0 OR teste = 10;', function (error, results, fields) {
-            if (error) throw error;
-
-
-            for (let r = 0; r < results.length; r++) {
-                clientes[r] = results[r];
-            }
-
-            console.log(clientes.length);
-
-
-            if (ses.funcao == 'financeiro' || ses.funcao == 'diretores') {
-                res.render('pages/tabela', { areas: areas, clientes: clientes, funcao: ses.funcao });
-            } else {
-                res.redirect("/teste");
-            }
-        });
-    }
-});
-
-
-// index page - Tela de cadastro de Usuário
-app.get('/cadastroCancelamento', function (req, res) {
-
-    var areas = [];
-    var clientes = [];
-
-    if (req.session.email == undefined) {
-
-        res.redirect("/login");
-    } else {
-
-        connection.query('SELECT * FROM cancelamento.cliente where teste = 0;', function (error, results, fields) {
-            if (error) throw error;
-
-
-            for (let r = 0; r < results.length; r++) {
-                clientes[r] = results[r];
-            }
-
-            console.log(clientes.length);
-
-
-            if (ses.funcao == 'financeiro' || ses.funcao == 'diretores') {
-                res.render('pages/cadastroCancelamento', { areas: areas, clientes: clientes, funcao: ses.funcao });
-            } else {
-                res.redirect("/teste");
-            }
-        });
-    }
-});
-
-// index page - Tela de cadastro de Usuário
-app.get('/tabelaAgendados', function (req, res) {
-
-    var areas = [];
-    var clientes = [];
-
-    if (req.session.email == undefined) {
-
-        res.redirect("/login");
-
-    } else {
-
-        connection.query('SELECT * FROM cancelamento.cliente where teste = 1;', function (error, results, fields) {
-            if (error) throw error;
-
-
-            for (let r = 0; r < results.length; r++) {
-                clientes[r] = results[r];
-            }
-
-            console.log(clientes.length);
-
-
-            if (ses.funcao == 'financeiro' || ses.funcao == 'diretores') {
-                res.render('pages/tabelaReagendados', { areas: areas, clientes: clientes, funcao: ses.funcao });
-            } else {
-                res.redirect("/teste");
-            }
-        });
-    }
-});
-
-//Função para download de aquivos
-app.get('/download/:file', function (req, res) {
-    var file = __dirname + '/uploads/' + req.params.file;
-    res.download(file);
-});
-
-//Função para cadato de usuário
-app.get('/usuario/:nome/:email/:senha/:funcao', function (req, res) {
-
-    let nome = req.params.nome;
-    let email = req.params.email;
-    let senha = req.params.senha;
-    let funcao = req.params.funcao;
-
-    var j = {
-        nome: nome, email: email, senha: senha, funcao: funcao
-    };
-
-    senha = criptografar(senha)
-
-
-    let sql = "INSERT INTO acesso(nome,email,senha, funcao) values('" + nome + "','" + email + "','" + senha + "','" + funcao + "');";
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
-
-        res.json({ json: "Enviado" })
-
-    });
-
-});
-
-
-//Função para cadato de usuário
-app.get('/cliente/:id/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
-
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
-
-
-    let sql = "UPDATE cancelamento.cliente SET " +
-        "razao_social='" + j.razao + "', " +
-        "fantasia='" + j.fantasia + "', " +
-        "uf='" + j.uf + "', " +
-        "contador='" + j.contador + "', " +
-        "endereco='" + j.endereco + "', " +
-        "bairro='" + j.bairro + "', " +
-        "cidade='" + j.cidade + "', " +
-        "mensalidade=" + j.mensalidade + ", " +
-        "dia=" + j.dia + ", " +
-        "licenca=" + j.licenca + ", " +
-        "telefone='" + j.telefone + "', " +
-        "email='" + j.email + "', " +
-        "vendedor='" + j.vendedor + "', " +
-        "teste=1, " +
-        "comentario='" + j.comentario + "' "
-        + " WHERE id=" + j.id;
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
-
-        res.json({ json: "Enviado" })
-
-    });
-
-});
-
-//Função para cadato de usuário
-app.get('/salvar/:id/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
-
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
-
-
-    let sql = "UPDATE cancelamento.cliente SET " +
-        "razao_social='" + j.razao + "', " +
-        "fantasia='" + j.fantasia + "', " +
-        "uf='" + j.uf + "', " +
-        "contador='" + j.contador + "', " +
-        "endereco='" + j.endereco + "', " +
-        "bairro='" + j.bairro + "', " +
-        "cidade='" + j.cidade + "', " +
-        "mensalidade=" + j.mensalidade + ", " +
-        "dia=" + j.dia + ", " +
-        "licenca=" + j.licenca + ", " +
-        "telefone='" + j.telefone + "', " +
-        "email='" + j.email + "', " +
-        "vendedor='" + j.vendedor + "', " +
-        "comentario='" + j.comentario + "' "
-        + " WHERE id=" + j.id;
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
-
-        res.json({ json: "Enviado" })
-
-    });
-
-});
-
-
-//Cadastra Cliente que cancelou
-app.get('/clienteCancelado/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
-
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
-
-
-    let sql = "INSERT INTO cancelamento.cliente(razao_social, fantasia, uf,contador," +
-        "endereco, bairro, cidade, mensalidade, dia, licenca, telefone, email, vendedor, teste, comentario) values('"
-        + j.razao + "','" + j.fantasia + "','" + j.uf + "','" + j.contador + "','" + j.endereco + "','" +
-        j.bairro + "','" + j.cidade + "'," + j.mensalidade + ", " + j.dia + "," + j.licenca + ",'" +
-        j.telefone + "','" + j.email + "','" + j.vendedor + "',0,'" + j.comentario + "');";
-
-    //res.json({ json: sql });
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
-
-        res.json({ json: "Enviado" })
-
-    });
-
-});
-
-//Função para cadato de usuário
-app.get('/clienteRevertido/:id/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
-
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
-
-    let sql = "UPDATE cancelamento.cliente SET " +
-        "razao_social='" + j.razao + "', " +
-        "fantasia='" + j.fantasia + "', " +
-        "uf='" + j.uf + "', " +
-        "contador='" + j.contador + "', " +
-        "endereco='" + j.endereco + "', " +
-        "bairro='" + j.bairro + "', " +
-        "cidade='" + j.cidade + "', " +
-        "mensalidade=" + j.mensalidade + ", " +
-        "dia=" + j.dia + ", " +
-        "licenca=" + j.licenca + ", " +
-        "telefone='" + j.telefone + "', " +
-        "email='" + j.email + "', " +
-        "vendedor='" + j.vendedor + "', " +
-        "teste=2, " +
-        "comentario='" + j.comentario + "' "
-        + " WHERE id=" + j.id;
-
-    //Envia email para o financeiro sobre o revertimento
-
-    var emailASerEnviado = {
-        from: 'revertimento@klausfiscal.com.br',
-        //to: 'guibarbosa28@outlook.com',
-        to: 'financeiro@klausfiscal.com.br',
-        subject: 'Revertimento bem sucedido',
-        text: 'Informamos atraves deste que a empresa ' + j.razao + ' retornou para nos '
-            + 'mediante a uma licença de R$' + j.licenca + ' e mensalidade de R$' + j.mensalidade
-            + ' com vencimento no dia ' + j.dia + '.\n\nAtenciosamento: Equipe de revertimento Klaus'
-    };
-
-    remetente.sendMail(emailASerEnviado, function (error) {
-        if (error) {
-            console.log(error);
         } else {
-            console.log('Email enviado com sucesso.');
+            t += ",";
         }
-    });
+    }
+});
 
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
-        }
 
-        res.json({ json: "Enviado" })
+// Campeão
+app.get('/fim/:id/:vitorioso', function (req, res) {
 
-    });
+    const json = JSON.parse(fs.readFileSync('finais.json', 'utf-8'));
+    const finais = json.finais;
+
+    fim(req, res, finais);
 
 });
 
-//Função para cadato de usuário
-app.get('/clientePerdido/:id/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
+app.listen(port);
+console.log('Já ligado a porta '+ port);
 
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
+function fim(req, res, finais) {
+    id = req.params.id;
+    vit = req.params.vitorioso;
 
-    let sql = "UPDATE cancelamento.cliente SET " +
-        "razao_social='" + j.razao + "', " +
-        "fantasia='" + j.fantasia + "', " +
-        "uf='" + j.uf + "', " +
-        "contador='" + j.contador + "', " +
-        "endereco='" + j.endereco + "', " +
-        "bairro='" + j.bairro + "', " +
-        "cidade='" + j.cidade + "', " +
-        "mensalidade=" + j.mensalidade + ", " +
-        "dia=" + j.dia + ", " +
-        "licenca=" + j.licenca + ", " +
-        "telefone='" + j.telefone + "', " +
-        "email='" + j.email + "', " +
-        "vendedor='" + j.vendedor + "', " +
-        "teste=3, " +
-        "comentario='" + j.comentario + "' "
-        + " WHERE id=" + j.id;
+    let t = "{\"finais\":[";
 
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
+    console.log(vit);
+
+    for (let a = 0; a < finais.length; a++) {
+
+
+        if (vit == "O") {
+            if (finais[a].a == id.substr(0, 2)) {
+                finais[a].w += 50;
+            }
+            if (finais[a].a == id.substr(0, 4)) {
+                finais[a].w += 15;
+            }
+
+            if (finais[a].a == id.substr(0, 6)) {
+                finais[a].w += 20;
+            }
+
+            if (finais[a].a == id) {
+                finais[a].w += 100;
+            }
+
         }
 
-        res.json({ json: "Enviado" })
+        if (vit == "X") {
+            if (finais[a].a == id.substr(0, 2)) {
+                finais[a].w -= 5;
+            }
 
-    });
+            if (finais[a].a == id.substr(0, 4)) {
+                finais[a].w -= 10;
+            }
 
-});
+            if (finais[a].a == id.substr(0, 6)) {
+                finais[a].w -= 15;
+            }
 
-//Função para cadato de usuário
-app.get('/clienteRetorno/:id/:razao/:fantasia/:uf/:contador/:endereco/:bairro/:cidade/:mensalidade/:dia/:licenca/:telefone/:email/:vendedor/:teste/:comentario/', function (req, res) {
+            if (finais[a].a == id) {
+                finais[a].w = 0;
+            }
 
-    var j = {
-        id: req.params.id, razao: req.params.razao, fantasia: req.params.fantasia, uf: req.params.uf, contador: req.params.contador,
-        endereco: req.params.endereco, bairro: req.params.bairro, cidade: req.params.cidade, mensalidade: req.params.mensalidade,
-        dia: req.params.dia, licenca: req.params.licenca, telefone: req.params.telefone, email: req.params.email,
-        vendedor: req.params.vendedor, teste: req.params.teste, comentario: req.params.comentario
-    };
-
-
-    let sql = "UPDATE cancelamento.cliente SET " +
-        "razao_social='" + j.razao + "', " +
-        "fantasia='" + j.fantasia + "', " +
-        "uf='" + j.uf + "', " +
-        "contador='" + j.contador + "', " +
-        "endereco='" + j.endereco + "', " +
-        "bairro='" + j.bairro + "', " +
-        "cidade='" + j.cidade + "', " +
-        "mensalidade=" + j.mensalidade + ", " +
-        "dia=" + j.dia + ", " +
-        "licenca=" + j.licenca + ", " +
-        "telefone='" + j.telefone + "', " +
-        "email='" + j.email + "', " +
-        "vendedor='" + j.vendedor + "', " +
-        "teste=10, " +
-        "comentario='" + j.comentario + "' "
-        + " WHERE id=" + j.id;
-
-    connection.query(sql, function (error, results, fields) {
-        if (error) {
-            res.json({ json: "Erro" })
         }
 
-        res.json({ json: "Enviado" })
+        if (vit == "E") {
+            if (finais[a].a == id.substr(0, 2)) {
+                finais[a].w += 50;
+            }
+            if (finais[a].a == id.substr(0, 4)) {
+                finais[a].w += 10;
+            }
 
-    });
+            if (finais[a].a == id.substr(0, 6)) {
+                finais[a].w += 15;
+            }
 
-});
+            if (finais[a].a == id) {
+                finais[a].w += 20;
+            }
 
-//Função q deleta os Filés
-app.get('/delete/:file', function (req, res) {
-    var file = __dirname + '/uploads/' + req.params.file;
-    var arq = __dirname + "/uploads/"
-    fs.unlink(file, function (err) {
-        if (err) throw err;
-        console.log('Arquivo deletado!');
-    })
-    //res.download(file);
-});
+        }
 
-//Função que baixa o arquivo
-app.post("/upload", upload.single("file"), (req, res) => {
-    res.send("Arquivo Recebido");
-})
 
-app.listen(6000);
-console.log('6000 is the magic port');
+        t += JSON.stringify(finais[a]);
+
+        if (a < finais.length - 1) {
+            t += ",";
+        }
+
+    }
+    t += "]}";
+
+    console.log("Estamos no fim:\n" + t);
+
+    fs.writeFileSync("finais.json", "" + t);
+
+    res.json({ resp: vit });
+}
+
+
+async function verificaCampeao(total, res) {
+
+    let i = "";
+    let p = "";
+
+    let vet = "";
+
+    for (let a = 0; a < total.length; a++) {
+        if (a % 2 == 0) {
+            i += total[a];
+        } else {
+            p += total[a];
+        }
+    }
+
+    //Verifica se o X ganhou por linha
+    if (i.indexOf("0") >= 0 && i.indexOf("1") >= 0 && i.indexOf("2") >= 0) {
+        vet = "X";
+    }
+    if (i.indexOf("3") >= 0 && i.indexOf("4") >= 0 && i.indexOf("5") >= 0) {
+        vet = "X";
+    }
+    if (i.indexOf("6") >= 0 && i.indexOf("7") >= 0 && i.indexOf("8") >= 0) {
+        vet = "X";
+    }
+
+    //Verifica se o X ganhou por Coluna
+    if (i.indexOf("0") >= 0 && i.indexOf("3") >= 0 && i.indexOf("6") >= 0) {
+        vet = "X";
+    }
+    if (i.indexOf("1") >= 0 && i.indexOf("4") >= 0 && i.indexOf("7") >= 0) {
+        vet = "X";
+    }
+    if (i.indexOf("2") >= 0 && i.indexOf("5") >= 0 && i.indexOf("8") >= 0) {
+        vet = "X";
+    }
+
+    //Verifica se o X ganhou por diagonal
+    if (i.indexOf("0") >= 0 && i.indexOf("4") >= 0 && i.indexOf("8") >= 0) {
+        vet = "X";
+    } if (i.indexOf("2") >= 0 && i.indexOf("4") >= 0 && i.indexOf("6") >= 0) {
+        vet = "X";
+    }
+
+    /*
+    *================================================================
+    */
+
+    //Verifica se o O ganhou por linha
+    if (p.indexOf("0") >= 0 && p.indexOf("1") >= 0 && p.indexOf("2") >= 0) {
+        vet = "O";
+    }
+    if (p.indexOf("3") >= 0 && p.indexOf("4") >= 0 && p.indexOf("5") >= 0) {
+        vet = "O";
+    }
+    if (p.indexOf("6") >= 0 && p.indexOf("7") >= 0 && p.indexOf("8") >= 0) {
+        vet = "O";
+    }
+
+    //Verifica se o O ganhou por Coluna
+    if (p.indexOf("0") >= 0 && p.indexOf("3") >= 0 && p.indexOf("6") >= 0) {
+        vet = "O";
+    }
+    if (p.indexOf("1") >= 0 && p.indexOf("4") >= 0 && p.indexOf("7") >= 0) {
+        vet = "O";
+    }
+    if (p.indexOf("2") >= 0 && p.indexOf("5") >= 0 && p.indexOf("8") >= 0) {
+        vet = "O";
+    }
+
+    //Verifica se o O ganhou por diagonal
+    if (p.indexOf("0") >= 0 && p.indexOf("4") >= 0 && p.indexOf("8") >= 0) {
+        vet = "O";
+    } if (p.indexOf("2") >= 0 && p.indexOf("4") >= 0 && p.indexOf("6") >= 0) {
+        vet = "O";
+    }
+
+    if (vet === "") {
+        return "fica";
+    } else {
+        return vet;
+    }
+
+
+
+}
+
+function procuraVitoria(id, finais, res) {
+    var i = "";
+    var p = "";
+    var retorno = "";
+
+    for (let a = 0; a < id.length; a++) {
+        if (a % 2 == 0) {
+            i += id[a];
+        } else {
+            p += id[a];
+        }
+    }
+
+    //Ganhando na primeira coluna (036)
+    if (p.indexOf("0") >= 0 && p.indexOf("3") >= 0 && i.indexOf("6") < 0) {
+        retorno = 6;
+    } if (p.indexOf("0") >= 0 && i.indexOf("3") < 0 && p.indexOf("6") >= 0) {
+        retorno = 3;
+    } if (i.indexOf("0") < 0 && p.indexOf("3") >= 0 && p.indexOf("6") >= 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na segunda colunas (147)
+    if (p.indexOf("1") >= 0 && p.indexOf("4") >= 0 && i.indexOf("7") < 0) {
+        retorno = 7;
+    }
+    if (p.indexOf("1") >= 0 && i.indexOf("4") < 0 && p.indexOf("7") >= 0) {
+        retorno = 4;
+    }
+    if (i.indexOf("1") < 0 && p.indexOf("4") >= 0 && p.indexOf("7") >= 0) {
+        retorno = 1;
+    }
+
+    //Ganhando na terceira coluna (258)
+    if (p.indexOf("2") >= 0 && p.indexOf("5") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    }
+    if (p.indexOf("2") >= 0 && i.indexOf("5") < 0 && p.indexOf("8") >= 0) {
+        retorno = 5;
+    }
+    if (i.indexOf("2") < 0 && p.indexOf("5") >= 0 && p.indexOf("8") >= 0) {
+        retorno = 2;
+    }
+
+
+    //Ganhando na primeira linha (012)
+    if (p.indexOf("0") >= 0 && p.indexOf("1") >= 0 && i.indexOf("2") < 0) {
+        retorno = 2;
+    }
+    if (p.indexOf("0") >= 0 && i.indexOf("1") < 0 && p.indexOf("2") >= 0) {
+        retorno = 1;
+    } if (i.indexOf("0") < 0 && p.indexOf("1") >= 0 && p.indexOf("2") >= 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na Segunda linha (345)
+    if (p.indexOf("3") >= 0 && p.indexOf("4") >= 0 && i.indexOf("5") < 0) {
+        retorno = 5;
+    }
+    if (p.indexOf("3") >= 0 && i.indexOf("4") < 0 && p.indexOf("5") >= 0) {
+        retorno = 4;
+    } if (i.indexOf("3") < 0 && p.indexOf("4") >= 0 && p.indexOf("5") >= 0) {
+        retorno = 3;
+    }
+
+    //Ganhando na Terceira linha (678)
+    if (p.indexOf("6") >= 0 && p.indexOf("7") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    }
+    if (p.indexOf("6") >= 0 && i.indexOf("7") < 0 && p.indexOf("8") >= 0) {
+        retorno = 7;
+    } if (i.indexOf("6") < 0 && p.indexOf("7") >= 0 && p.indexOf("8") >= 0) {
+        retorno = 6;
+    }
+
+
+    //Ganhando na diagonal do 0 ao 8   (048)
+    if (p.indexOf("0") >= 0 && p.indexOf("4") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    } if (p.indexOf("0") >= 0 && p.indexOf("8") >= 0 && i.indexOf("4") < 0) {
+        retorno = 4;
+    } if (p.indexOf("4") >= 0 && p.indexOf("8") >= 0 && i.indexOf("0") < 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na diagonal do 2 ao 6   (246)
+    if (p.indexOf("2") >= 0 && p.indexOf("4") >= 0 && i.indexOf("6") < 0) {
+        retorno = 6;
+    } if (p.indexOf("2") >= 0 && i.indexOf("4") < 0 && p.indexOf("6") >= 0) {
+        retorno = 4;
+    } if (i.indexOf("2") < 0 && p.indexOf("4") >= 0 && p.indexOf("6") >= 0) {
+        retorno = 2;
+    }
+
+    if (retorno === "") {
+        return false;
+    } else {
+        res.json({ resp: retorno });
+        return true;
+    }
+}
+
+function procuraDerrota(id, finais, res) {
+    var i = "";
+    var p = "";
+    var retorno = "";
+
+    for (let a = 0; a < id.length; a++) {
+        if (a % 2 == 0) {
+            p += id[a];
+        } else {
+            i += id[a];
+        }
+    }
+
+    if (p.indexOf("4") >= 0 && p.indexOf("8") >= 0 && i.indexOf("0") < 0) {
+        console.log("HEHE BOY");
+    }
+
+    //Ganhando na primeira coluna (036)
+    if (p.indexOf("0") >= 0 && p.indexOf("3") >= 0 && i.indexOf("6") < 0) {
+        retorno = 6;
+    } if (p.indexOf("0") >= 0 && i.indexOf("3") < 0 && p.indexOf("6") >= 0) {
+        retorno = 3;
+    } if (i.indexOf("0") < 0 && p.indexOf("3") >= 0 && p.indexOf("6") >= 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na segunda colunas (147)
+    if (p.indexOf("1") >= 0 && p.indexOf("4") >= 0 && i.indexOf("7") < 0) {
+        retorno = 7;
+    }
+    if (p.indexOf("1") >= 0 && i.indexOf("4") < 0 && p.indexOf("7") >= 0) {
+        retorno = 4;
+    }
+    if (i.indexOf("1") < 0 && p.indexOf("4") >= 0 && p.indexOf("7") >= 0) {
+        retorno = 1;
+    }
+
+    //Ganhando na terceira coluna (258)
+    if (p.indexOf("2") >= 0 && p.indexOf("5") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    }
+    if (p.indexOf("2") >= 0 && i.indexOf("5") < 0 && p.indexOf("8") >= 0) {
+        retorno = 5;
+    }
+    if (i.indexOf("2") < 0 && p.indexOf("5") >= 0 && p.indexOf("8") >= 0) {
+        retorno = 2;
+    }
+
+
+    //Ganhando na primeira linha (012)
+    if (p.indexOf("0") >= 0 && p.indexOf("1") >= 0 && i.indexOf("2") < 0) {
+        retorno = 2;
+    }
+    if (p.indexOf("0") >= 0 && i.indexOf("1") < 0 && p.indexOf("2") >= 0) {
+        retorno = 1;
+    } if (i.indexOf("0") < 0 && p.indexOf("1") >= 0 && p.indexOf("2") >= 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na Segunda linha (345)
+    if (p.indexOf("3") >= 0 && p.indexOf("4") >= 0 && i.indexOf("5") < 0) {
+        retorno = 5;
+    }
+    if (p.indexOf("3") >= 0 && i.indexOf("4") < 0 && p.indexOf("5") >= 0) {
+        retorno = 4;
+    } if (i.indexOf("3") < 0 && p.indexOf("4") >= 0 && p.indexOf("5") >= 0) {
+        retorno = 3;
+    }
+
+    //Ganhando na Terceira linha (678)
+    if (p.indexOf("6") >= 0 && p.indexOf("7") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    }
+    if (p.indexOf("6") >= 0 && i.indexOf("7") < 0 && p.indexOf("8") >= 0) {
+        retorno = 7;
+    } if (i.indexOf("6") < 0 && p.indexOf("7") >= 0 && p.indexOf("8") >= 0) {
+        retorno = 6;
+    }
+
+
+    //Ganhando na diagonal do 0 ao 8   (048)
+    if (p.indexOf("0") >= 0 && p.indexOf("4") >= 0 && i.indexOf("8") < 0) {
+        retorno = 8;
+    } if (p.indexOf("0") >= 0 && p.indexOf("8") >= 0 && i.indexOf("4") < 0) {
+        retorno = 4;
+    } if (p.indexOf("4") >= 0 && p.indexOf("8") >= 0 && i.indexOf("0") < 0) {
+        retorno = 0;
+    }
+
+    //Ganhando na diagonal do 2 ao 6   (246)
+    if (p.indexOf("2") >= 0 && p.indexOf("4") >= 0 && i.indexOf("6") < 0) {
+        retorno = 6;
+    } if (p.indexOf("2") >= 0 && i.indexOf("4") < 0 && p.indexOf("6") >= 0) {
+        retorno = 4;
+    } if (i.indexOf("2") < 0 && p.indexOf("4") >= 0 && p.indexOf("6") >= 0) {
+        retorno = 2;
+    }
+
+    if (retorno === "") {
+        return false;
+    } else {
+        res.json({ resp: retorno });
+        return true;
+    }
+}
+
+module.exports = app

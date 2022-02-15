@@ -1,0 +1,19 @@
+{
+    "name": "projeto-tiktaktoe",
+    "version": "1.0.1",
+    "description": "IA criada para jogar jogo da velha se aprimorando com machine learning.",
+    "author": "Guilherme Barbosa (Douglas) ",
+    "scripts": {
+        "dev": "nodemon ",
+        "start": "node ./"
+    },
+    "dependencies": {
+        "nodemon": "^2.0.15",
+        "express": "^4.17.2",
+        "body-parser": "1.19.1"
+    },
+    "engines": {
+        "node": ">= 6.9.6",
+        "npm": " >= 3.0.0"
+    }
+}
