@@ -1,7 +1,5 @@
 # tiktaktoe
-<<<<<<< HEAD
 Jogo da velha baseado em machine learnig para a partir do basico aprender a tomar as melhores  dentro de jogo
-
 
 Atraves da tentativa e erro ele rankeia as tentavidas ate perceber quais jogadas são claramente melhores,
 e quais com certeza deve se evitar, testando opções novas caso não tenha algo garantidamente bom a se fazer.
